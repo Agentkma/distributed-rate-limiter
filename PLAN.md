@@ -12,11 +12,11 @@ Build a distributed rate limiter that enforces a per-IP request limit across mul
 
 The system consists of:
 
-- **Multiple Go HTTP servers** (3–5 instances), each running on a different port.
+- **One Go HTTP server binary** launched 3 times, each on a different port (8001, 8002, 8003) — mirroring how a real distributed system runs the same code on different machines.
 - **A single Redis instance** used as the shared state store.
-- **A client script** that sends requests to random servers to demonstrate distributed behavior.
+- **A client script** that sends requests to different servers to demonstrate distributed coordination.
 
-Each server is stateless and identical. All rate-limit decisions are made using shared counters stored in Redis.
+Each server process is stateless and runs identical code. All rate-limit decisions are made using shared counters stored in Redis. Each response identifies which server handled it, making distributed behavior visually observable.
 
 ---
 
@@ -45,17 +45,20 @@ Because all servers share Redis:
 
 ## 5. Implementation Plan
 
-1. Implement a small Go HTTP server with one endpoint (`/api`).
-2. Add a Redis client and rate-limiting logic.
-3. Add command-line flags so each server can run on a different port.
-4. Provide a `run.sh` script (macOS/Linux) that:
+1. Build **one Go HTTP server binary** (`cmd/server/main.go`) with:
+   - A `--port` flag so the same binary runs on any port.
+   - One endpoint (`/api`) that responds with `"OK – served by :PORT"`, identifying itself in every response.
+2. Add a Redis client and rate-limiting logic in shared internal packages.
+3. Provide a `run.sh` script (macOS/Linux) that:
    - Checks if Redis is installed and exits with a clear message if not.
-   - Starts Redis in the background.
-   - Starts all Go servers (ports 8001, 8002, 8003).
-   - Prints the configured rate limit and server URLs so the grader knows exactly how to test.
-5. Provide a `run.ps1` script (Windows PowerShell) with identical logic.
-6. Provide a client script to generate test traffic.
-7. Include a `README.md` with instructions for running the project locally.
+   - Builds the binary once.
+   - Launches 3 instances: `./server --port 8001`, `./server --port 8002`, `./server --port 8003`.
+   - Prints the configured rate limit and all server URLs on startup.
+4. Provide a `run.ps1` script (Windows PowerShell) with identical logic.
+5. Provide a `client.sh` script with two modes:
+   - **Manual mode:** prints ready-to-copy `curl` commands the grader can run one at a time.
+   - **Auto mode:** fires requests automatically across all 3 servers, printing a timestamped log of each request, which server responded, and the HTTP status — making the 429 moment unmistakable.
+6. Include a `README.md` with instructions for running the project locally.
 
 ### What both run scripts print on startup
 
@@ -68,9 +71,26 @@ Servers:
   http://localhost:8002/api
   http://localhost:8003/api
 
-Try sending requests:
-  curl http://localhost:8001/api
-  curl http://localhost:8002/api   ← same IP limit applies here too
+Manual test (copy and paste these):
+  curl http://localhost:8001/api   → OK – served by :8001
+  curl http://localhost:8002/api   → OK – served by :8002
+  curl http://localhost:8003/api   → OK – served by :8003
+  (4th request to any server)      → 429 Too Many Requests
+
+Or run the automated client:
+  bash client.sh
+```
+
+### What `client.sh` auto mode prints
+
+```text
+[1] GET :8001  →  200  "OK – served by :8001"
+[2] GET :8002  →  200  "OK – served by :8002"
+[3] GET :8003  →  200  "OK – served by :8003"
+[4] GET :8001  →  429  "Too Many Requests"
+[5] GET :8002  →  429  "Too Many Requests"
+
+Rate limit hit after 3 requests. All servers are enforcing the shared limit.
 ```
 
 ---
@@ -80,21 +100,17 @@ Try sending requests:
 ```text
 /distributed-rate-limiter
 ├── /cmd
-│   ├── /server1
-│   │   └── main.go
-│   ├── /server2
-│   │   └── main.go
-│   └── /server3
-│       └── main.go
+│   └── /server
+│       └── main.go          ← single binary; run 3 times with --port flag
 ├── /internal
 │   ├── /ratelimiter
 │   │   └── limiter.go       ← all rate-limit logic lives here
 │   └── /redisclient
 │       └── client.go        ← Redis connection setup lives here
 ├── go.mod
-├── run.sh                   ← macOS/Linux startup script
-├── run.ps1                  ← Windows PowerShell startup script
-├── client.sh                ← test traffic generator
+├── run.sh                   ← macOS/Linux: builds + launches 3 server instances
+├── run.ps1                  ← Windows PowerShell: same logic
+├── client.sh                ← manual curl instructions + automated test mode
 ├── PLAN.md
 └── README.md
 ```
@@ -105,18 +121,28 @@ Try sending requests:
 | --- | --- | --- |
 | `internal/ratelimiter` | `Allow(ip string) bool` | Compute Redis key, increment counter, check limit |
 | `internal/redisclient` | `GetClient() *redis.Client` | Centralized Redis connection config |
-| `cmd/server*/main.go` | HTTP handler only | Tiny — just calls `ratelimiter.Allow()` |
+| `cmd/server/main.go` | `--port` flag + HTTP handler | Tiny — parses port, identifies itself in response |
 
-Each server's handler becomes:
+The single binary accepts a `--port` flag and embeds its port in every response:
 
 ```go
-func handler(w http.ResponseWriter, r *http.Request) {
-    ip := extractIP(r)
-    if !ratelimiter.Allow(ip) {
-        http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
-        return
+func main() {
+    port := flag.String("port", "8080", "port to listen on")
+    flag.Parse()
+    // handler closes over port so each instance identifies itself
+    http.HandleFunc("/api", makeHandler(*port))
+    http.ListenAndServe(":"+*port, nil)
+}
+
+func makeHandler(port string) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        ip := extractIP(r)
+        if !ratelimiter.Allow(ip) {
+            http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+            return
+        }
+        fmt.Fprintf(w, "OK – served by :%s\n", port)
     }
-    fmt.Fprintln(w, "OK")
 }
 ```
 
@@ -126,12 +152,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 The final ZIP file will include:
 
-- [ ] Go source code for all servers (`/cmd/`)
-- [ ] Shared rate-limiter package (`/internal/ratelimiter/`)
-- [ ] Shared Redis client package (`/internal/redisclient/`)
-- [ ] `run.sh` — macOS/Linux startup script
-- [ ] `run.ps1` — Windows PowerShell startup script
-- [ ] `client.sh` — test traffic generator script
+- [ ] `cmd/server/main.go` — single server binary with `--port` flag
+- [ ] `internal/ratelimiter/limiter.go` — shared rate-limit logic
+- [ ] `internal/redisclient/client.go` — shared Redis connection setup
+- [ ] `run.sh` — macOS/Linux: builds binary, launches 3 instances, prints startup info
+- [ ] `run.ps1` — Windows PowerShell: identical logic
+- [ ] `client.sh` — manual `curl` instructions + automated timestamped test log
 - [ ] `go.mod` — Go module definition
 - [ ] `README.md` — setup and usage instructions
 
@@ -141,6 +167,7 @@ The final ZIP file will include:
 
 - **One script to run everything** — no Docker, no env vars, no manual Redis setup.
 - **Rate limit is printed on startup** — grader immediately knows what to test.
+- **Every response identifies its server** — `"OK – served by :8001"` proves requests are hitting different processes.
 - **All rate-limit logic in one file** (`limiter.go`) — easy to read and verify.
-- **Servers are tiny** — grader can confirm each server shares the same logic at a glance.
-- **Distributed behavior is observable** — hitting different ports with the same IP triggers 429 on all of them.
+- **One binary, not three** — mirrors real distributed systems; no duplicated code.
+- **Automated client script** — grader can run `bash client.sh` and watch the 429 appear with a clear log, without typing a single `curl` command.
