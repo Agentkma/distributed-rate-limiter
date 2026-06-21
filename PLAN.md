@@ -45,20 +45,27 @@ Because all servers share Redis:
 
 ## 5. Implementation Plan
 
-1. Build **one Go HTTP server binary** (`cmd/server/main.go`) with:
-   - A `--port` flag so the same binary runs on any port.
-   - One endpoint (`/api`) that responds with `"OK – served by :PORT"`, identifying itself in every response.
-2. Add a Redis client and rate-limiting logic in shared internal packages.
-3. Provide a `run.sh` script (macOS/Linux) that:
-   - Checks if Redis is installed and exits with a clear message if not.
-   - Builds the binary once.
-   - Launches 3 instances: `./server --port 8001`, `./server --port 8002`, `./server --port 8003`.
-   - Prints the configured rate limit and all server URLs on startup.
-4. Provide a `run.ps1` script (Windows PowerShell) with identical logic.
-5. Provide a `client.sh` script with two modes:
-   - **Manual mode:** prints ready-to-copy `curl` commands the grader can run one at a time.
-   - **Auto mode:** fires requests automatically across all 3 servers, printing a timestamped log of each request, which server responded, and the HTTP status — making the 429 moment unmistakable.
-6. Include a `README.md` with instructions for running the project locally.
+1. Build **one Go HTTP server binary** (`cmd/server/main.go`) with a `--port` flag and one `/api` endpoint that responds with `"OK - served by :PORT"`.
+
+1. Add a Redis client and rate-limiting logic in shared internal packages.
+
+1. Provide a `run.sh` script (macOS/Linux) that checks Redis installation, builds the binary once, launches `./server --port 8001`, `./server --port 8002`, `./server --port 8003`, and prints startup URLs/rate limit.
+
+1. Provide a `run.ps1` script (Windows PowerShell) with identical logic.
+
+1. Provide a `client.sh` script in **manual mode** that prints ready-to-copy `curl` commands.
+
+1. Include a `README.md` with instructions for running the project locally.
+
+1. Add explicit unit tests for core behavior in `internal/ratelimiter/limiter_test.go` (allow/deny + fail-open) and `cmd/server/main_test.go` (`extractIP` with `RemoteAddr`).
+
+### Fixed behavior decisions
+
+- Client IP extraction uses `RemoteAddr` only.
+- Rate limit is fixed at **3 requests/minute per IP**.
+- Redis target is local default: `localhost:6379`.
+- On Redis errors, limiter is **fail-open** (request allowed) and logs each Redis error.
+- Windows support requires `run.ps1`; manual testing is acceptable.
 
 ### What both run scripts print on startup
 
@@ -72,25 +79,10 @@ Servers:
   http://localhost:8003/api
 
 Manual test (copy and paste these):
-  curl http://localhost:8001/api   → OK – served by :8001
-  curl http://localhost:8002/api   → OK – served by :8002
-  curl http://localhost:8003/api   → OK – served by :8003
+  curl http://localhost:8001/api   → OK - served by :8001
+  curl http://localhost:8002/api   → OK - served by :8002
+  curl http://localhost:8003/api   → OK - served by :8003
   (4th request to any server)      → 429 Too Many Requests
-
-Or run the automated client:
-  bash client.sh
-```
-
-### What `client.sh` auto mode prints
-
-```text
-[1] GET :8001  →  200  "OK – served by :8001"
-[2] GET :8002  →  200  "OK – served by :8002"
-[3] GET :8003  →  200  "OK – served by :8003"
-[4] GET :8001  →  429  "Too Many Requests"
-[5] GET :8002  →  429  "Too Many Requests"
-
-Rate limit hit after 3 requests. All servers are enforcing the shared limit.
 ```
 
 ---
@@ -101,16 +93,18 @@ Rate limit hit after 3 requests. All servers are enforcing the shared limit.
 /distributed-rate-limiter
 ├── /cmd
 │   └── /server
-│       └── main.go          ← single binary; run 3 times with --port flag
+│       ├── main.go          ← single binary; run 3 times with --port flag
+│       └── main_test.go     ← unit tests for `extractIP`
 ├── /internal
 │   ├── /ratelimiter
-│   │   └── limiter.go       ← all rate-limit logic lives here
+│   │   ├── limiter.go       ← all rate-limit logic lives here
+│   │   └── limiter_test.go  ← unit tests for limiter behavior
 │   └── /redisclient
 │       └── client.go        ← Redis connection setup lives here
 ├── go.mod
 ├── run.sh                   ← macOS/Linux: builds + launches 3 server instances
 ├── run.ps1                  ← Windows PowerShell: same logic
-├── client.sh                ← manual curl instructions + automated test mode
+├── client.sh                ← manual curl instructions
 ├── PLAN.md
 └── README.md
 ```
@@ -141,7 +135,7 @@ func makeHandler(port string) http.HandlerFunc {
             http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
             return
         }
-        fmt.Fprintf(w, "OK – served by :%s\n", port)
+    fmt.Fprintf(w, "OK - served by :%s\n", port)
     }
 }
 ```
@@ -157,9 +151,55 @@ The final ZIP file will include:
 - [ ] `internal/redisclient/client.go` — shared Redis connection setup
 - [ ] `run.sh` — macOS/Linux: builds binary, launches 3 instances, prints startup info
 - [ ] `run.ps1` — Windows PowerShell: identical logic
-- [ ] `client.sh` — manual `curl` instructions + automated timestamped test log
+- [ ] `client.sh` — manual `curl` instructions
 - [ ] `go.mod` — Go module definition
+- [ ] `internal/ratelimiter/limiter_test.go` — unit tests for limiter decisions
+- [ ] `cmd/server/main_test.go` — unit tests for `extractIP`
 - [ ] `README.md` — setup and usage instructions
+
+---
+
+## 9. Test Plan
+
+- **Unit tests (`go test ./...`)**
+  - `internal/ratelimiter/limiter_test.go`
+    - allows requests when Redis is unavailable (fail-open)
+    - validates key/bucket format behavior
+  - `cmd/server/main_test.go`
+    - parses IPv4 `RemoteAddr` correctly
+    - parses IPv6 `RemoteAddr` correctly
+    - handles malformed/empty `RemoteAddr`
+- **Build validation**
+  - `go build ./...`
+- **End-to-end manual validation**
+  - run servers with `run.sh` or `run.ps1`
+  - execute printed `curl` commands and verify 4th request returns `429`
+
+---
+
+## 10. Progress Checkpoint (2026-06-21)
+
+### Completed
+
+- Phase 1 scaffolded and validated:
+  - Added `go.mod`/`go.sum`
+  - Implemented `cmd/server/main.go`
+  - Implemented `internal/redisclient/client.go`
+  - Implemented `internal/ratelimiter/limiter.go`
+  - Ran `go build ./...` and `go test ./...`
+- Plan aligned to approved decisions:
+  - fixed limit `3/min`
+  - `RemoteAddr` IP extraction
+  - fail-open behavior on Redis errors
+  - local Redis at `localhost:6379`
+  - manual `client.sh` flow
+- Explicit unit-test planning added to this document.
+
+### Pending (Next Session)
+
+- Phase 2: implement `run.sh`, `run.ps1`, `client.sh` (manual mode), and `README.md`.
+- Phase 2 validation: verify script behavior and startup/manual test instructions.
+- Phase 3: implement unit tests in `internal/ratelimiter/limiter_test.go` and `cmd/server/main_test.go`.
 
 ---
 
@@ -168,6 +208,7 @@ The final ZIP file will include:
 - **One script to run everything** — no Docker, no env vars, no manual Redis setup.
 - **Rate limit is printed on startup** — grader immediately knows what to test.
 - **Every response identifies its server** — `"OK – served by :8001"` proves requests are hitting different processes.
+- **Every response identifies its server** — `"OK - served by :8001"` proves requests are hitting different processes.
 - **All rate-limit logic in one file** (`limiter.go`) — easy to read and verify.
 - **One binary, not three** — mirrors real distributed systems; no duplicated code.
-- **Automated client script** — grader can run `bash client.sh` and watch the 429 appear with a clear log, without typing a single `curl` command.
+- **Manual test script** — grader can run `bash client.sh` to get exact `curl` commands for verification.
