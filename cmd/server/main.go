@@ -43,7 +43,7 @@ func parseServerConfigFromArgs(args []string) serverConfig {
 }
 
 func newHTTPServer(config serverConfig) *http.Server {
-	// mux is Go built in router
+	// mux is Go built in request router
 	mux := http.NewServeMux()
 	registerRoutes(mux, config)
 

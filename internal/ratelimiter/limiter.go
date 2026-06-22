@@ -12,24 +12,27 @@ import (
 
 const (
 	maxRequestsPerWindow = 3
-	windowDuration       = 60 * time.Second
-	requestTimeout       = 2 * time.Second
+	windowDurationSec    = 60 * time.Second
+	requestTimeoutSec    = 2 * time.Second
+	minuteWindowLayout   = "200601021504"
 )
 
 func Allow(clientAddress string) bool {
 	ctx, cancel := newRequestContext()
 	defer cancel()
 
-	key := buildRateLimitKey(clientAddress)
+	rateLimitKey := buildRateLimitKey(clientAddress)
 	client := redisclient.GetClient()
 
-	count, ok := incrementRequestCount(ctx, client, key)
+	count, ok := incrementRequestCount(ctx, client, rateLimitKey)
 	if !ok {
+		// Fail-open: allow requests when Redis is unavailable.
 		return true
 	}
 
-	if isFirstRequestInWindow(count) {
-		if !setWindowExpiration(ctx, client, key) {
+	if isFirstRequestForWindow(count) {
+		if !setWindowExpiration(ctx, client, rateLimitKey) {
+			// Fail-open: allow requests when Redis is unavailable.
 			return true
 		}
 	}
@@ -38,11 +41,11 @@ func Allow(clientAddress string) bool {
 }
 
 func newRequestContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), requestTimeout)
+	return context.WithTimeout(context.Background(), requestTimeoutSec)
 }
 
 func buildRateLimitKey(clientAddress string) string {
-	return fmt.Sprintf("rate:%s:%s", clientAddress, currentMinuteBucket())
+	return fmt.Sprintf("rate:%s:%s", clientAddress, currentMinuteWindow())
 }
 
 func incrementRequestCount(ctx context.Context, client *redis.Client, key string) (int64, bool) {
@@ -55,12 +58,12 @@ func incrementRequestCount(ctx context.Context, client *redis.Client, key string
 	return count, true
 }
 
-func isFirstRequestInWindow(count int64) bool {
+func isFirstRequestForWindow(count int64) bool {
 	return count == 1
 }
 
 func setWindowExpiration(ctx context.Context, client *redis.Client, key string) bool {
-	if err := client.Expire(ctx, key, windowDuration).Err(); err != nil {
+	if err := client.Expire(ctx, key, windowDurationSec).Err(); err != nil {
 		logRedisError("EXPIRE", key, err)
 		return false
 	}
@@ -76,6 +79,6 @@ func logRedisError(operation, key string, err error) {
 	log.Printf("redis error (%s %s): %v", operation, key, err)
 }
 
-func currentMinuteBucket() string {
-	return time.Now().UTC().Format("200601021504")
+func currentMinuteWindow() string {
+	return time.Now().UTC().Format(minuteWindowLayout)
 }
