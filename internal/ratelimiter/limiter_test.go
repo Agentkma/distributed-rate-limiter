@@ -18,29 +18,57 @@ func TestCurrentMinuteWindowFormat(t *testing.T) {
 }
 
 func TestBuildRateLimitKey(t *testing.T) {
-	key := buildRateLimitKey("127.0.0.1")
-	if !strings.HasPrefix(key, "rate:127.0.0.1:") {
-		t.Fatalf("expected key prefix %q, got %q", "rate:127.0.0.1:", key)
+	tests := []struct {
+		name          string
+		clientAddress string
+		wantPrefix    string
+	}{
+		{"IPv4", "127.0.0.1", "rate:127.0.0.1:"},
+		{"IPv6", "::1", "rate:::1:"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key := buildRateLimitKey(tt.clientAddress)
+			if !strings.HasPrefix(key, tt.wantPrefix) {
+				t.Errorf("buildRateLimitKey(%q) = %q, want prefix %q", tt.clientAddress, key, tt.wantPrefix)
+			}
+		})
 	}
 }
 
 func TestIsFirstRequestForWindow(t *testing.T) {
-	if !isFirstRequestForWindow(1) {
-		t.Fatal("expected count=1 to be first request in window")
+	tests := []struct {
+		name  string
+		count int64
+		want  bool
+	}{
+		{"first request", 1, true},
+		{"second request", 2, false},
 	}
-	if isFirstRequestForWindow(2) {
-		t.Fatal("expected count=2 to not be first request in window")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isFirstRequestForWindow(tt.count); got != tt.want {
+				t.Errorf("isFirstRequestForWindow(%d) = %v, want %v", tt.count, got, tt.want)
+			}
+		})
 	}
 }
 
 func TestIsWithinLimit(t *testing.T) {
-	if !isWithinLimit(1) {
-		t.Fatal("expected count=1 to be within limit")
+	tests := []struct {
+		name  string
+		count int64
+		want  bool
+	}{
+		{"first request", 1, true},
+		{"at limit", windowRequestLimit, true},
+		{"over limit", windowRequestLimit + 1, false},
 	}
-	if !isWithinLimit(maxRequestsPerWindow) {
-		t.Fatalf("expected count=%d to be within limit", maxRequestsPerWindow)
-	}
-	if isWithinLimit(maxRequestsPerWindow + 1) {
-		t.Fatalf("expected count=%d to exceed limit", maxRequestsPerWindow+1)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isWithinLimit(tt.count); got != tt.want {
+				t.Errorf("isWithinLimit(%d) = %v, want %v", tt.count, got, tt.want)
+			}
+		})
 	}
 }

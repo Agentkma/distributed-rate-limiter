@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	maxRequestsPerWindow = 3
-	windowDurationSec    = 60 * time.Second
+	windowRequestLimit = 3
+	windowDurationSec  = 60 * time.Second
 	requestTimeoutSec    = 2 * time.Second
 	minuteWindowLayout   = "200601021504"
 )
@@ -72,7 +72,7 @@ func setWindowExpiration(ctx context.Context, client *redis.Client, key string) 
 }
 
 func isWithinLimit(count int64) bool {
-	return count <= maxRequestsPerWindow
+	return count <= windowRequestLimit
 }
 
 func logRedisError(operation, key string, err error) {

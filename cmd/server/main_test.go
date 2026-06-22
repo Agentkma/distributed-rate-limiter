@@ -6,57 +6,45 @@ import (
 	"testing"
 )
 
-func TestParseServerConfigFromArgs_DefaultPort(t *testing.T) {
-	cfg := parseServerConfigFromArgs([]string{})
-	if cfg.port != cliDefaultPort {
-		t.Fatalf("expected default port %q, got %q", cliDefaultPort, cfg.port)
+func TestParseServerConfigFromArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantPort string
+	}{
+		{"default port", []string{}, cliDefaultPort},
+		{"custom port", []string{"--port", "8001"}, "8001"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := parseServerConfigFromArgs(tt.args)
+			if cfg.port != tt.wantPort {
+				t.Errorf("parseServerConfigFromArgs(%v).port = %q, want %q", tt.args, cfg.port, tt.wantPort)
+			}
+		})
 	}
 }
 
-func TestParseServerConfigFromArgs_CustomPort(t *testing.T) {
-	cfg := parseServerConfigFromArgs([]string{"--port", "8001"})
-	if cfg.port != "8001" {
-		t.Fatalf("expected custom port %q, got %q", "8001", cfg.port)
+func TestResolveClientAddress(t *testing.T) {
+	tests := []struct {
+		name       string
+		remoteAddr string
+		want       string
+	}{
+		{"IPv4", "127.0.0.1:54321", "127.0.0.1"},
+		{"IPv6", "[::1]:54321", "::1"},
+		{"empty address", "", "unknown"},
+		{"malformed address", "not-a-host-port", "not-a-host-port"},
 	}
-}
-
-func TestResolveClientAddress_IPv4(t *testing.T) {
-	req := httptest.NewRequest("GET", "/api", nil)
-	req.RemoteAddr = "127.0.0.1:54321"
-
-	got := resolveClientAddress(req)
-	if got != "127.0.0.1" {
-		t.Fatalf("expected %q, got %q", "127.0.0.1", got)
-	}
-}
-
-func TestResolveClientAddress_IPv6(t *testing.T) {
-	req := httptest.NewRequest("GET", "/api", nil)
-	req.RemoteAddr = "[::1]:54321"
-
-	got := resolveClientAddress(req)
-	if got != "::1" {
-		t.Fatalf("expected %q, got %q", "::1", got)
-	}
-}
-
-func TestResolveClientAddress_EmptyAddress(t *testing.T) {
-	req := httptest.NewRequest("GET", "/api", nil)
-	req.RemoteAddr = ""
-
-	got := resolveClientAddress(req)
-	if got != "unknown" {
-		t.Fatalf("expected %q, got %q", "unknown", got)
-	}
-}
-
-func TestResolveClientAddress_MalformedAddress(t *testing.T) {
-	req := httptest.NewRequest("GET", "/api", nil)
-	req.RemoteAddr = "not-a-host-port"
-
-	got := resolveClientAddress(req)
-	if got != "not-a-host-port" {
-		t.Fatalf("expected malformed address to pass through, got %q", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/api", nil)
+			req.RemoteAddr = tt.remoteAddr
+			got := resolveClientAddress(req)
+			if got != tt.want {
+				t.Errorf("resolveClientAddress(%q) = %q, want %q", tt.remoteAddr, got, tt.want)
+			}
+		})
 	}
 }
 
