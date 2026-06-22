@@ -161,14 +161,41 @@ The final ZIP file will include:
 
 ## 9. Test Plan
 
+### Coverage Targets
+
+| Package | Min | Goal |
+| --- | --- | --- |
+| `cmd/server` | 80% | 90% |
+| `internal/ratelimiter` | 80% | 90% |
+| `internal/redisclient` | 80% | 90% |
+| **total** | **80%** | **90%** |
+
+Run coverage with:
+
+```bash
+go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out
+```
+
+### Current Coverage (2026-06-22)
+
+| Package | Coverage | Notes |
+| --- | --- | --- |
+| `cmd/server` | 44.1% | `makeAPIHandler` untested; needs HTTP integration test with mock limiter |
+| `internal/ratelimiter` | 15.4% | `Allow`, `incrementRequestCount`, `setWindowExpiration` need Redis mock (e.g. `miniredis`) |
+| `internal/redisclient` | 0.0% | `GetClient` untested |
+| **total** | **30.2%** | |
+
+### Gaps to Close
+
+- Introduce `miniredis` (or equivalent) to unit-test `Allow` and its Redis-calling helpers without a live Redis instance.
+- Add HTTP handler tests for `makeAPIHandler` using `httptest` and a stub limiter.
+- Test `GetClient` in `internal/redisclient`.
+
+### Test Suites
+
 - **Unit tests (`go test ./...`)**
-  - `internal/ratelimiter/limiter_test.go`
-    - allows requests when Redis is unavailable (fail-open)
-    - validates key/bucket format behavior
-  - `cmd/server/main_test.go`
-    - parses IPv4 `RemoteAddr` correctly
-    - parses IPv6 `RemoteAddr` correctly
-    - handles malformed/empty `RemoteAddr`
+  - `internal/ratelimiter/limiter_test.go` — table-driven tests for all pure functions; Redis-dependent paths via `miniredis`
+  - `cmd/server/main_test.go` — table-driven tests for config parsing, IP resolution, response helpers, and HTTP handler
 - **Build validation**
   - `go build ./...`
 - **End-to-end manual validation**

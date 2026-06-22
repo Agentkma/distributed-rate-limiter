@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Agentkma/distributed-rate-limiter/internal/ratelimiter"
+	"github.com/Agentkma/distributed-rate-limiter/internal/redisclient"
 )
 
 type serverConfig struct {
@@ -55,7 +56,8 @@ func newHTTPServer(config serverConfig) *http.Server {
 }
 
 func registerRoutes(mux *http.ServeMux, config serverConfig) {
-	mux.HandleFunc("/api", makeAPIHandler(config.port))
+	store := ratelimiter.NewStore(redisclient.GetClient())
+	mux.HandleFunc("/api", makeAPIHandler(config.port, store))
 }
 
 func runHTTPServer(server *http.Server) {
@@ -65,10 +67,10 @@ func runHTTPServer(server *http.Server) {
 	}
 }
 
-func makeAPIHandler(port string) http.HandlerFunc {
+func makeAPIHandler(port string, store ratelimiter.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		clientAddress := resolveClientAddress(r)
-		if ratelimiter.Allow(clientAddress) {
+		if ratelimiter.Allow(store, clientAddress) {
 			respondSuccess(w, port)
 			return
 		}

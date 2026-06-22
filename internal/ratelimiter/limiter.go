@@ -6,32 +6,54 @@ import (
 	"log"
 	"time"
 
-	"github.com/Agentkma/distributed-rate-limiter/internal/redisclient"
 	"github.com/redis/go-redis/v9"
 )
 
 const (
 	windowRequestLimit = 3
 	windowDurationSec  = 60 * time.Second
-	requestTimeoutSec    = 2 * time.Second
-	minuteWindowLayout   = "200601021504"
+	requestTimeoutSec  = 2 * time.Second
+	minuteWindowLayout = "200601021504"
 )
 
-func Allow(clientAddress string) bool {
+// Store is the Redis operations required by the rate limiter.
+type Store interface {
+	Incr(ctx context.Context, key string) (int64, error)
+	Expire(ctx context.Context, key string, expiration time.Duration) (bool, error)
+}
+
+// clientStore adapts *redis.Client to the Store interface.
+type clientStore struct {
+	client *redis.Client
+}
+
+func (s *clientStore) Incr(ctx context.Context, key string) (int64, error) {
+	return s.client.Incr(ctx, key).Result()
+}
+
+func (s *clientStore) Expire(ctx context.Context, key string, expiration time.Duration) (bool, error) {
+	return s.client.Expire(ctx, key, expiration).Result()
+}
+
+// NewStore wraps a *redis.Client as a Store.
+func NewStore(client *redis.Client) Store {
+	return &clientStore{client: client}
+}
+
+func Allow(store Store, clientAddress string) bool {
 	ctx, cancel := newRequestContext()
 	defer cancel()
 
 	rateLimitKey := buildRateLimitKey(clientAddress)
-	client := redisclient.GetClient()
 
-	count, ok := incrementRequestCount(ctx, client, rateLimitKey)
+	count, ok := incrementRequestCount(ctx, store, rateLimitKey)
 	if !ok {
 		// Fail-open: allow requests when Redis is unavailable.
 		return true
 	}
 
 	if isFirstRequestForWindow(count) {
-		if !setWindowExpiration(ctx, client, rateLimitKey) {
+		if !setWindowExpiration(ctx, store, rateLimitKey) {
 			// Fail-open: allow requests when Redis is unavailable.
 			return true
 		}
@@ -48,8 +70,8 @@ func buildRateLimitKey(clientAddress string) string {
 	return fmt.Sprintf("rate:%s:%s", clientAddress, currentMinuteWindow())
 }
 
-func incrementRequestCount(ctx context.Context, client *redis.Client, key string) (int64, bool) {
-	count, err := client.Incr(ctx, key).Result()
+func incrementRequestCount(ctx context.Context, store Store, key string) (int64, bool) {
+	count, err := store.Incr(ctx, key)
 	if err != nil {
 		logRedisError("INCR", key, err)
 		return 0, false
@@ -62,8 +84,8 @@ func isFirstRequestForWindow(count int64) bool {
 	return count == 1
 }
 
-func setWindowExpiration(ctx context.Context, client *redis.Client, key string) bool {
-	if err := client.Expire(ctx, key, windowDurationSec).Err(); err != nil {
+func setWindowExpiration(ctx context.Context, store Store, key string) bool {
+	if _, err := store.Expire(ctx, key, windowDurationSec); err != nil {
 		logRedisError("EXPIRE", key, err)
 		return false
 	}

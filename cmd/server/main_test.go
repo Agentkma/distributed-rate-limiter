@@ -1,10 +1,33 @@
 package main
 
 import (
+	"context"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/Agentkma/distributed-rate-limiter/internal/ratelimiter"
 )
+
+// stubStore implements ratelimiter.Store for handler tests.
+type stubStore struct {
+	allow bool
+}
+
+var _ ratelimiter.Store = (*stubStore)(nil)
+
+func (s *stubStore) Incr(_ context.Context, _ string) (int64, error) {
+	if s.allow {
+		return 1, nil
+	}
+	return 4, nil // over windowRequestLimit of 3
+}
+
+func (s *stubStore) Expire(_ context.Context, _ string, _ time.Duration) (bool, error) {
+	return true, nil
+}
 
 func TestParseServerConfigFromArgs(t *testing.T) {
 	tests := []struct {
@@ -74,5 +97,41 @@ func TestRespondSuccess(t *testing.T) {
 	}
 	if got := rr.Body.String(); got != "OK - served by :8001\n" {
 		t.Fatalf("expected body %q, got %q", "OK - served by :8001\n", got)
+	}
+}
+
+func TestMakeAPIHandler(t *testing.T) {
+	tests := []struct {
+		name       string
+		allow      bool
+		wantStatus int
+		wantBody   string
+	}{
+		{"allowed", true, http.StatusOK, "OK - served by :8001"},
+		{"rate limited", false, http.StatusTooManyRequests, "Too Many Requests"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &stubStore{allow: tt.allow}
+			handler := makeAPIHandler("8001", store)
+			req := httptest.NewRequest("GET", "/api", nil)
+			req.RemoteAddr = "127.0.0.1:12345"
+			rr := httptest.NewRecorder()
+			handler(rr, req)
+			if rr.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", rr.Code, tt.wantStatus)
+			}
+			if !strings.Contains(rr.Body.String(), tt.wantBody) {
+				t.Errorf("body = %q, want to contain %q", rr.Body.String(), tt.wantBody)
+			}
+		})
+	}
+}
+
+func TestNewHTTPServer(t *testing.T) {
+	cfg := serverConfig{port: "9999"}
+	srv := newHTTPServer(cfg)
+	if srv.Addr != ":9999" {
+		t.Errorf("server.Addr = %q, want %q", srv.Addr, ":9999")
 	}
 }
