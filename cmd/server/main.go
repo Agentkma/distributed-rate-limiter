@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/Agentkma/distributed-rate-limiter/internal/ratelimiter"
 	"github.com/Agentkma/distributed-rate-limiter/internal/redisclient"
+	"github.com/redis/go-redis/v9"
 )
 
 type serverConfig struct {
@@ -56,8 +58,26 @@ func newHTTPServer(config serverConfig) *http.Server {
 }
 
 func registerRoutes(mux *http.ServeMux, config serverConfig) {
-	store := ratelimiter.NewStore(redisclient.GetClient())
+	client := redisclient.GetClient()
+	redisStartUpCheck(client, ":"+config.port)
+	store := ratelimiter.NewStore(client)
 	mux.HandleFunc("/api", makeAPIHandler(config.port, store))
+}
+
+type redisPinger interface {
+	Ping(ctx context.Context) *redis.StatusCmd
+}
+
+func redisStartUpCheck(client redisPinger, serverAddr string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := client.Ping(ctx).Err(); err != nil {
+		log.Printf("redis startup check failed on %s: %v (continuing fail-open)", serverAddr, err)
+		return
+	}
+
+	log.Printf("redis startup check passed on %s", serverAddr)
 }
 
 func runHTTPServer(server *http.Server) {

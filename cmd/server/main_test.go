@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Agentkma/distributed-rate-limiter/internal/ratelimiter"
+	"github.com/redis/go-redis/v9"
 )
 
 // stubStore implements ratelimiter.Store for handler tests.
@@ -27,6 +31,18 @@ func (s *stubStore) Incr(_ context.Context, _ string) (int64, error) {
 
 func (s *stubStore) Expire(_ context.Context, _ string, _ time.Duration) (bool, error) {
 	return true, nil
+}
+
+type stubRedisPinger struct {
+	err error
+}
+
+func (s stubRedisPinger) Ping(_ context.Context) *redis.StatusCmd {
+	if s.err != nil {
+		return redis.NewStatusResult("", s.err)
+	}
+
+	return redis.NewStatusResult("PONG", nil)
 }
 
 func TestParseServerConfigFromArgs(t *testing.T) {
@@ -134,4 +150,53 @@ func TestNewHTTPServer(t *testing.T) {
 	if srv.Addr != ":9999" {
 		t.Errorf("server.Addr = %q, want %q", srv.Addr, ":9999")
 	}
+}
+
+func TestRedisStartUpCheck_FailedLogsServerAddr(t *testing.T) {
+	client := stubRedisPinger{err: errors.New("redis unavailable")}
+
+	output := captureLogOutput(t, func() {
+		redisStartUpCheck(client, ":9999")
+	})
+
+	if !strings.Contains(output, "redis startup check failed on :9999:") {
+		t.Fatalf("expected failed startup log with server addr, got %q", output)
+	}
+	if !strings.Contains(output, "continuing fail-open") {
+		t.Fatalf("expected fail-open note in failed startup log, got %q", output)
+	}
+}
+
+func TestRedisStartUpCheck_PassedLogsServerAddr(t *testing.T) {
+	client := stubRedisPinger{}
+
+	output := captureLogOutput(t, func() {
+		redisStartUpCheck(client, ":8001")
+	})
+
+	if !strings.Contains(output, "redis startup check passed on :8001") {
+		t.Fatalf("expected passed startup log with server addr, got %q", output)
+	}
+}
+
+func captureLogOutput(t *testing.T, fn func()) string {
+	t.Helper()
+
+	var buffer bytes.Buffer
+	previousWriter := log.Writer()
+	previousFlags := log.Flags()
+	previousPrefix := log.Prefix()
+
+	log.SetOutput(&buffer)
+	log.SetFlags(0)
+	log.SetPrefix("")
+	t.Cleanup(func() {
+		log.SetOutput(previousWriter)
+		log.SetFlags(previousFlags)
+		log.SetPrefix(previousPrefix)
+	})
+
+	fn()
+
+	return buffer.String()
 }
