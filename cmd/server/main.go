@@ -51,7 +51,7 @@ func newHTTPServer(config serverConfig) *http.Server {
 	registerRoutes(mux, config)
 
 	return &http.Server{
-		Addr:              ":" + config.port,
+		Addr:              bindAddr(config),
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
@@ -59,9 +59,13 @@ func newHTTPServer(config serverConfig) *http.Server {
 
 func registerRoutes(mux *http.ServeMux, config serverConfig) {
 	client := redisclient.GetClient()
-	redisStartUpCheck(client, ":"+config.port)
+	redisStartUpCheck(client, bindAddr(config))
 	store := ratelimiter.NewStore(client)
 	mux.HandleFunc("/api", makeAPIHandler(config.port, store))
+}
+
+func bindAddr(config serverConfig) string {
+	return ":" + config.port
 }
 
 type redisPinger interface {
