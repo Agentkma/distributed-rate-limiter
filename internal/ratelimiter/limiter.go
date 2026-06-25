@@ -53,7 +53,7 @@ func Allow(store Store, clientAddress string) bool {
 	}
 
 	if isFirstRequestForWindow(count) {
-		if !setWindowExpiration(ctx, store, rateLimitKey) {
+		if err := setWindowExpiration(ctx, store, rateLimitKey); err != nil {
 			// Fail-open: allow requests when Redis is unavailable.
 			return true
 		}
@@ -84,13 +84,13 @@ func isFirstRequestForWindow(count int64) bool {
 	return count == 1
 }
 
-func setWindowExpiration(ctx context.Context, store Store, key string) bool {
+func setWindowExpiration(ctx context.Context, store Store, key string) error {
 	if _, err := store.Expire(ctx, key, windowDurationSec); err != nil {
 		logRedisError("EXPIRE", key, err)
-		return false
+		return err
 	}
 
-	return true
+	return nil
 }
 
 func isWithinLimit(count int64) bool {
