@@ -33,13 +33,17 @@ func main() {
 }
 
 func parseServerConfig() serverConfig {
-	cliArgs := os.Args[1:]
+	// Skip the first argument (program name/binary path) when parsing CLI args
+	const cliArgsStartIndex = 1
+	cliArgs := os.Args[cliArgsStartIndex:]
 	return parseServerConfigFromArgs(cliArgs)
 }
 
 func parseServerConfigFromArgs(args []string) serverConfig {
 	flagSet := flag.NewFlagSet("server", flag.ContinueOnError)
 	cliPortValue := flagSet.String(cliPortFlagName, cliDefaultPort, cliPortFlagDescription)
+	// Intentionally ignore flag parse errors: controlled runner args + safe default port 
+	// keep local demo startup fail-open.
 	_ = flagSet.Parse(args)
 
 	return serverConfig{port: *cliPortValue}
