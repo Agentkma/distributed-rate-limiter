@@ -6,6 +6,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+const localRedisAddr = "localhost:6379"
+
 var (
 	client *redis.Client
 	once   sync.Once
@@ -14,7 +16,7 @@ var (
 func GetClient() *redis.Client {
 	once.Do(func() {
 		client = redis.NewClient(&redis.Options{
-			Addr: "localhost:6379",
+			Addr: localRedisAddr,
 		})
 	})
 

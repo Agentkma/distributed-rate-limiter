@@ -64,6 +64,8 @@ Because all servers share Redis:
 - Client IP extraction uses `RemoteAddr` only.
 - Rate limit is fixed at **3 requests/minute per IP**.
 - Redis target is local default: `localhost:6379`.
+- Redis address in Go code is centralized via a named constant (`localRedisAddr`).
+- Run scripts mirror the same Redis address value explicitly to stay in sync with app defaults.
 - On Redis errors, limiter is **fail-open** (request allowed) and logs each Redis error.
 - Windows support requires `run.ps1`; manual testing is acceptable.
 
