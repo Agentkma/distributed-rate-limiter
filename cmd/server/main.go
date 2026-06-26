@@ -28,7 +28,8 @@ const (
 
 func main() {
 	config := parseServerConfig()
-	server := newHTTPServer(config)
+	store := newRateLimiterStore(config)
+	server := newHTTPServer(config, store)
 	runHTTPServer(server)
 }
 
@@ -49,10 +50,10 @@ func parseServerConfigFromArgs(args []string) serverConfig {
 	return serverConfig{port: *cliPortValue}
 }
 
-func newHTTPServer(config serverConfig) *http.Server {
+func newHTTPServer(config serverConfig, store ratelimiter.Store) *http.Server {
 	// mux is Go built in request router
 	mux := http.NewServeMux()
-	registerRoutes(mux, config)
+	registerRoutes(mux, config, store)
 
 	return &http.Server{
 		Addr:              bindAddr(config),
@@ -61,10 +62,14 @@ func newHTTPServer(config serverConfig) *http.Server {
 	}
 }
 
-func registerRoutes(mux *http.ServeMux, config serverConfig) {
+func newRateLimiterStore(config serverConfig) ratelimiter.Store {
 	client := redisclient.GetClient()
 	redisStartUpCheck(client, bindAddr(config))
-	store := ratelimiter.NewStore(client)
+
+	return ratelimiter.NewStore(client)
+}
+
+func registerRoutes(mux *http.ServeMux, config serverConfig, store ratelimiter.Store) {
 	mux.HandleFunc("/api", makeAPIHandler(config.port, store))
 }
 

@@ -146,7 +146,8 @@ func TestMakeAPIHandler(t *testing.T) {
 
 func TestNewHTTPServer(t *testing.T) {
 	cfg := serverConfig{port: "9999"}
-	srv := newHTTPServer(cfg)
+	store := &stubStore{allow: true}
+	srv := newHTTPServer(cfg, store)
 	if srv.Addr != ":9999" {
 		t.Errorf("server.Addr = %q, want %q", srv.Addr, ":9999")
 	}
