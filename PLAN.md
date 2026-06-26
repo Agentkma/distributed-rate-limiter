@@ -148,16 +148,16 @@ func makeHandler(port string) http.HandlerFunc {
 
 The final ZIP file will include:
 
-- [ ] `cmd/server/main.go` — single server binary with `--port` flag
-- [ ] `internal/ratelimiter/limiter.go` — shared rate-limit logic
-- [ ] `internal/redisclient/client.go` — shared Redis connection setup
-- [ ] `run.sh` — macOS/Linux: builds binary, launches 3 instances, prints startup info
-- [ ] `run.ps1` — Windows PowerShell: identical logic
-- [ ] `client.sh` — manual `curl` instructions
-- [ ] `go.mod` — Go module definition
-- [ ] `internal/ratelimiter/limiter_test.go` — unit tests for limiter decisions
-- [ ] `cmd/server/main_test.go` — unit tests for `extractIP`
-- [ ] `README.md` — setup and usage instructions
+- [x] `cmd/server/main.go` — single server binary with `--port` flag
+- [x] `internal/ratelimiter/limiter.go` — shared rate-limit logic
+- [x] `internal/redisclient/client.go` — shared Redis connection setup
+- [x] `run.sh` — macOS/Linux: builds binary, launches 3 instances, prints startup info
+- [x] `run.ps1` — Windows PowerShell: identical logic
+- [x] `client.sh` — manual `curl` instructions
+- [x] `go.mod` — Go module definition
+- [x] `internal/ratelimiter/limiter_test.go` — unit tests for limiter decisions
+- [x] `cmd/server/main_test.go` — unit tests for `extractIP`
+- [x] `README.md` — setup and usage instructions
 
 ---
 
@@ -178,20 +178,19 @@ Run coverage with:
 go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out
 ```
 
-### Current Coverage (2026-06-22)
+### Current Coverage (2026-06-25)
 
 | Package | Coverage | Notes |
 | --- | --- | --- |
-| `cmd/server` | 44.1% | `makeAPIHandler` untested; needs HTTP integration test with mock limiter |
-| `internal/ratelimiter` | 15.4% | `Allow`, `incrementRequestCount`, `setWindowExpiration` need Redis mock (e.g. `miniredis`) |
-| `internal/redisclient` | 0.0% | `GetClient` untested |
-| **total** | **30.2%** | |
+| `cmd/server` | 77.8% | close to target; uncovered mainly around `main`, `parseServerConfig`, `runHTTPServer` |
+| `internal/ratelimiter` | 89.3% | target met |
+| `internal/redisclient` | 100.0% | target exceeded |
+| **total** | **82.9%** | minimum target met |
 
 ### Gaps to Close
 
-- Introduce `miniredis` (or equivalent) to unit-test `Allow` and its Redis-calling helpers without a live Redis instance.
-- Add HTTP handler tests for `makeAPIHandler` using `httptest` and a stub limiter.
-- Test `GetClient` in `internal/redisclient`.
+- Increase `cmd/server` coverage from 77.8% to >= 80% by adding targeted tests for remaining uncovered paths.
+- Add lightweight testability seam(s) for startup/run paths (`parseServerConfig`, `runHTTPServer`) if strict per-package minimums are required.
 
 ### Test Suites
 
@@ -226,9 +225,9 @@ go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out
 
 ### Pending (Next Session)
 
-- Phase 2: implement `run.sh`, `run.ps1`, `client.sh` (manual mode), and `README.md`.
-- Phase 2 validation: verify script behavior and startup/manual test instructions.
-- Phase 3: implement unit tests in `internal/ratelimiter/limiter_test.go` and `cmd/server/main_test.go`.
+- Validate `run.sh` and `run.ps1` manually with a live local Redis instance.
+- Lift `cmd/server` package coverage to >= 80% to satisfy per-package minimum target.
+- Prepare final ZIP handoff after one end-to-end manual run confirmation.
 
 ---
 
