@@ -49,7 +49,7 @@ Because all servers share Redis:
 
 1. Add a Redis client and rate-limiting logic in shared internal packages.
 
-1. Provide a `run.sh` script (macOS/Linux) that checks Redis installation, builds the binary once, launches `./server --port 8001`, `./server --port 8002`, `./server --port 8003`, and prints startup URLs/rate limit.
+1. Provide a `run.sh` script (macOS) that checks Redis installation, builds the binary once, launches `./server --port 8001`, `./server --port 8002`, `./server --port 8003`, and prints startup URLs/rate limit.
 
 1. Provide a `run.ps1` script (Windows PowerShell) with identical logic.
 
@@ -104,7 +104,7 @@ Manual test (copy and paste these):
 │   └── /redisclient
 │       └── client.go        ← Redis connection setup lives here
 ├── go.mod
-├── run.sh                   ← macOS/Linux: builds + launches 3 server instances
+├── run.sh                   ← macOS: builds + launches 3 server instances
 ├── run.ps1                  ← Windows PowerShell: same logic
 ├── client.sh                ← manual curl instructions
 ├── PLAN.md
@@ -151,7 +151,7 @@ The final ZIP file will include:
 - [x] `cmd/server/main.go` — single server binary with `--port` flag
 - [x] `internal/ratelimiter/limiter.go` — shared rate-limit logic
 - [x] `internal/redisclient/client.go` — shared Redis connection setup
-- [x] `run.sh` — macOS/Linux: builds binary, launches 3 instances, prints startup info
+- [x] `run.sh` — macOS: builds binary, launches 3 instances, prints startup info
 - [x] `run.ps1` — Windows PowerShell: identical logic
 - [x] `client.sh` — manual `curl` instructions
 - [x] `go.mod` — Go module definition
@@ -205,27 +205,33 @@ go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out
 
 ---
 
-## 10. Progress Checkpoint (2026-06-21)
+## 10. Progress Checkpoint (2026-06-25)
 
 ### Completed
 
-- Phase 1 scaffolded and validated:
+- Core implementation completed and validated:
   - Added `go.mod`/`go.sum`
   - Implemented `cmd/server/main.go`
   - Implemented `internal/redisclient/client.go`
   - Implemented `internal/ratelimiter/limiter.go`
   - Ran `go build ./...` and `go test ./...`
+- Script parity and usability improvements completed:
+  - `run.sh` and `run.ps1` now both check dependencies, verify Redis reachability at `localhost:6379`, build once, launch ports `8001/8002/8003`, and print aligned startup/manual-test guidance.
+  - Added DRY helpers to reduce repeated script logic/messages.
+    - Bash: `try_command`, `command_exists`, `print_lines`, `fail_with_help`
+    - PowerShell: `Try-Command`, `Command-Exists`, `Write-Lines`, `Fail-With-Help`
+  - Cleanup behavior is explicit in both scripts (`trap cleanup` in Bash and `try/finally` process cleanup in PowerShell).
 - Plan aligned to approved decisions:
   - fixed limit `3/min`
   - `RemoteAddr` IP extraction
   - fail-open behavior on Redis errors
   - local Redis at `localhost:6379`
   - manual `client.sh` flow
-- Explicit unit-test planning added to this document.
 
-### Pending (Next Session)
+### Open Items
 
-- Validate `run.sh` and `run.ps1` manually with a live local Redis instance.
+- Run a native Windows verification pass for `run.ps1` with live Redis (macOS-only local validation cannot fully runtime-verify PowerShell behavior).
+- Add a short README note clarifying Windows runtime verification status for `run.ps1`.
 - Lift `cmd/server` package coverage to >= 80% to satisfy per-package minimum target.
 - Prepare final ZIP handoff after one end-to-end manual run confirmation.
 
@@ -235,7 +241,6 @@ go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out
 
 - **One script to run everything** — no Docker, no env vars, no manual Redis setup.
 - **Rate limit is printed on startup** — grader immediately knows what to test.
-- **Every response identifies its server** — `"OK – served by :8001"` proves requests are hitting different processes.
 - **Every response identifies its server** — `"OK - served by :8001"` proves requests are hitting different processes.
 - **All rate-limit logic in one file** (`limiter.go`) — easy to read and verify.
 - **One binary, not three** — mirrors real distributed systems; no duplicated code.

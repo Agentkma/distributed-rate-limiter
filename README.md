@@ -17,6 +17,16 @@ Linux is not currently a supported run-script target for this project.
 - Redis running locally on `localhost:6379`
 - `redis-cli` available in your PATH
 
+### macOS Dependency Install Commands
+
+Use one-time install/start commands before running `run.sh`:
+
+```bash
+brew install go
+brew install redis
+brew services start redis
+```
+
 ### Windows Dependency Install Commands
 
 Use one-time install commands before running `run.ps1`:
