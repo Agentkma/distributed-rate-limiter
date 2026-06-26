@@ -25,12 +25,15 @@ trap cleanup EXIT INT TERM
 
 if ! command -v go >/dev/null 2>&1; then
   echo "go is not installed or not in PATH."
+  echo "This script supports macOS. Install Go with:"
+  echo "  brew install go"
   exit 1
 fi
 
 if ! command -v redis-cli >/dev/null 2>&1; then
   echo "redis-cli is not installed or not in PATH."
-  echo "Install Redis and make sure redis-cli is available."
+  echo "This script supports macOS. Install Redis with:"
+  echo "  brew install redis"
   exit 1
 fi
 

@@ -11,11 +11,18 @@ $ports = @(8001, 8002, 8003)
 $processes = @()
 
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
-    Write-Error "go is not installed or not in PATH."
+    Write-Host "go is not installed or not in PATH."
+    Write-Host "Install Go with:"
+    Write-Host "  winget install --id GoLang.Go -e"
+    Write-Error "Missing dependency: go"
 }
 
 if (-not (Get-Command redis-cli -ErrorAction SilentlyContinue)) {
-    Write-Error "redis-cli is not installed or not in PATH. Install Redis and try again."
+    Write-Host "redis-cli is not installed or not in PATH."
+    Write-Host "Install Redis CLI with one of these options:"
+    Write-Host "  scoop install redis"
+    Write-Host "  choco install redis-64"
+    Write-Error "Missing dependency: redis-cli"
 }
 
 $pingResult = & redis-cli -h $redisHost -p $redisPort ping 2>$null
