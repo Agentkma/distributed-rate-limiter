@@ -10,48 +10,101 @@ $serverPath = Join-Path $scriptRoot "server.exe"
 $ports = @(8001, 8002, 8003)
 $processes = @()
 
-if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
-    Write-Host "go is not installed or not in PATH."
-    Write-Host "Install Go with:"
-    Write-Host "  winget install --id GoLang.Go -e"
-    Write-Error "Missing dependency: go"
+function Try-Command {
+    param(
+        [scriptblock]$Command
+    )
+
+    try {
+        & $Command *> $null
+        return ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE)
+    }
+    catch {
+        return $false
+    }
 }
 
-if (-not (Get-Command redis-cli -ErrorAction SilentlyContinue)) {
-    Write-Host "redis-cli is not installed or not in PATH."
-    Write-Host "Install Redis CLI with one of these options:"
-    Write-Host "  scoop install redis"
-    Write-Host "  choco install redis-64"
-    Write-Error "Missing dependency: redis-cli"
+function Command-Exists {
+    param(
+        [string]$Name
+    )
+
+    return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
-$pingResult = & redis-cli -h $redisHost -p $redisPort ping 2>$null
-if ($LASTEXITCODE -ne 0 -or $pingResult -notmatch "PONG") {
-    Write-Error "Redis is not reachable at $redisAddr. Start Redis locally and run again."
+function Write-Lines {
+    param(
+        [string[]]$Lines
+    )
+
+    foreach ($line in $Lines) {
+        Write-Host $line
+    }
 }
 
+function Fail-With-Help {
+    param(
+        [string[]]$Lines,
+        [string]$ErrorMessage
+    )
+
+    Write-Lines -Lines $Lines
+    Write-Error $ErrorMessage
+}
+
+if (-not (Command-Exists "go")) {
+    Fail-With-Help -Lines @(
+        "go is not installed or not in PATH."
+        "This script supports Windows. Install Go with:"
+        "  winget install --id GoLang.Go -e"
+    ) -ErrorMessage "Missing dependency: go"
+}
+
+if (-not (Command-Exists "redis-cli")) {
+    Fail-With-Help -Lines @(
+        "redis-cli is not installed or not in PATH."
+        "This script supports Windows. Install Redis with one of these options:"
+        "  scoop install redis"
+        "  choco install redis-64"
+    ) -ErrorMessage "Missing dependency: redis-cli"
+}
+
+if (-not (Try-Command { redis-cli -h $redisHost -p $redisPort ping })) {
+    Fail-With-Help -Lines @(
+        "Redis is not reachable at $redisAddr."
+        "Try starting Redis with one of these:"
+        "  redis-server"
+        "  Start-Service Redis"
+        "Then run this script again (expected address: $redisAddr)."
+    ) -ErrorMessage "Redis startup check failed"
+}
+
+# Build the server binary once; it will be launched on multiple ports below.
 go build -o $serverPath ./cmd/server
 
+# Start one server per port in the background and track processes for cleanup.
 foreach ($port in $ports) {
     $proc = Start-Process -FilePath $serverPath -ArgumentList "--port", "$port" -PassThru
     $processes += $proc
 }
 
-Write-Host "Distributed Rate Limiter is running."
-Write-Host "Rate limit: 3 requests per minute per IP (shared across all servers)"
-Write-Host ""
-Write-Host "Servers:"
-Write-Host "  http://localhost:8001/api"
-Write-Host "  http://localhost:8002/api"
-Write-Host "  http://localhost:8003/api"
-Write-Host ""
-Write-Host "Manual test (copy and paste these):"
-Write-Host "  curl http://localhost:8001/api   -> OK - served by :8001"
-Write-Host "  curl http://localhost:8002/api   -> OK - served by :8002"
-Write-Host "  curl http://localhost:8003/api   -> OK - served by :8003"
-Write-Host "  (4th request to any server)      -> 429 Too Many Requests"
-Write-Host ""
-Write-Host "Press Ctrl+C to stop all servers."
+Write-Lines -Lines @(
+    "Distributed Rate Limiter is running."
+    "Rate limit: 3 requests per minute per IP (shared across all servers)"
+    ""
+    "Servers:"
+    "  http://localhost:8001/api"
+    "  http://localhost:8002/api"
+    "  http://localhost:8003/api"
+    ""
+    "Manual test (copy and paste these):"
+    "  curl http://localhost:8001/api   -> OK - served by :8001"
+    "  curl http://localhost:8002/api   -> OK - served by :8002"
+    "  curl http://localhost:8003/api   -> OK - served by :8003"
+    "  (4th request to any server)      -> 429 Too Many Requests"
+    ""
+    "Press Ctrl+C to stop all servers."
+)
 
 try {
     while ($true) {
