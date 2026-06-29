@@ -32,6 +32,31 @@ function Command-Exists {
     return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Wait-For-Redis {
+    param(
+        [int]$Retries,
+        [int]$DelaySeconds
+    )
+
+    for ($attempt = 1; $attempt -le $Retries; $attempt++) {
+        if (Try-Command { redis-cli -h $redisHost -p $redisPort ping }) {
+            return $true
+        }
+
+        Start-Sleep -Seconds $DelaySeconds
+    }
+
+    return $false
+}
+
+function Port-Is-In-Use {
+    param(
+        [int]$Port
+    )
+
+    return Try-Command { lsof -nP -iTCP:$Port -sTCP:LISTEN }
+}
+
 function Write-Lines {
     param(
         [string[]]$Lines
@@ -69,14 +94,26 @@ if (-not (Command-Exists "redis-cli")) {
     ) -ErrorMessage "Missing dependency: redis-cli"
 }
 
-if (-not (Try-Command { redis-cli -h $redisHost -p $redisPort ping })) {
+if (-not (Wait-For-Redis -Retries 5 -DelaySeconds 1)) {
     Fail-With-Help -Lines @(
         "Redis is not reachable at $redisAddr."
+        "If Redis was just started, wait a few seconds and run this script again."
         "Try starting Redis with one of these:"
         "  redis-server"
         "  Start-Service Redis"
         "Then run this script again (expected address: $redisAddr)."
     ) -ErrorMessage "Redis startup check failed"
+}
+
+foreach ($port in $ports) {
+    if (Port-Is-In-Use -Port $port) {
+        Fail-With-Help -Lines @(
+            "Port $port is already in use."
+            "Stop the existing process using that port and run this script again."
+            "To inspect it, run:"
+            "  lsof -nP -iTCP:$port -sTCP:LISTEN"
+        ) -ErrorMessage "Port preflight check failed"
+    }
 }
 
 # Build the server binary once; it will be launched on multiple ports below.
@@ -98,6 +135,7 @@ Write-Lines -Lines @(
     "  http://localhost:8003/api"
     ""
     "Manual test (copy and paste these):"
+    "  Keep this terminal running. Open a second terminal for curl tests."
     "  curl http://localhost:8001/api   -> OK - served by :8001"
     "  curl http://localhost:8002/api   -> OK - served by :8002"
     "  curl http://localhost:8003/api   -> OK - served by :8003"

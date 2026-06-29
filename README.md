@@ -27,6 +27,10 @@ brew install redis
 brew services start redis
 ```
 
+If Redis was just started, the first connectivity check can fail briefly while it finishes booting. If that happens, wait a few seconds and run `bash run.sh` again.
+
+If ports `8001`, `8002`, or `8003` are already in use, `run.sh` will stop before startup and tell you which port is occupied.
+
 ### Windows Dependency Install Commands
 
 Use one-time install commands before running `run.ps1`:
@@ -37,6 +41,10 @@ scoop install redis
 # or:
 choco install redis-64
 ```
+
+If Redis was just started, the first connectivity check can fail briefly while it finishes booting. If that happens, wait a few seconds and run `./run.ps1` again.
+
+If ports `8001`, `8002`, or `8003` are already in use, `run.ps1` will stop before startup and tell you which port is occupied.
 
 ## Run (macOS)
 
@@ -52,14 +60,36 @@ This script:
 - builds the server binary once
 - starts server instances on ports 8001, 8002, and 8003
 - prints manual curl commands
+- streams server logs directly in the same terminal without creating log files in the project folder
+
+Important: keep that terminal running while servers are up. Run `curl` tests from a second terminal window/tab.
 
 Press `Ctrl+C` to stop all started server processes.
+
+## Shutdown / Cleanup
+
+When you are done testing:
+
+- Stop server processes started by `run.sh` or `run.ps1` with `Ctrl+C` in the same terminal.
+- If Redis was started with Homebrew on macOS, stop it with:
+
+```bash
+brew services stop redis
+```
+
+- If Redis was started manually, stop it with:
+
+```bash
+redis-cli -h localhost -p 6379 shutdown
+```
 
 ## Run (Windows PowerShell)
 
 ```powershell
 .\run.ps1
 ```
+
+Keep that terminal running while servers are up. Run `curl` tests from a second terminal window/tab.
 
 Press `Ctrl+C` to stop all started server processes.
 
@@ -80,6 +110,7 @@ curl http://localhost:8001/api
 
 Expected behavior:
 
+- the limit is 3 requests per minute per client IP total across all servers (not 3 per server)
 - first 3 requests from the same client IP return `OK - served by :PORT`
 - the 4th request within the same minute returns `429 Too Many Requests`
 
