@@ -60,6 +60,7 @@ This script:
 - builds the server binary once
 - starts server instances on ports 8001, 8002, and 8003
 - prints manual curl commands
+- builds the server binary in a temporary system directory and cleans it up on exit
 - streams server logs directly in the same terminal without creating log files in the project folder
 
 Important: keep that terminal running while servers are up. Run `curl` tests from a second terminal window/tab.

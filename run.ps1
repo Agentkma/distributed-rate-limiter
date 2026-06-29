@@ -6,7 +6,9 @@ Set-Location $scriptRoot
 $redisAddr = "localhost:6379"
 $redisHost, $redisPort = $redisAddr.Split(':')
 
-$serverPath = Join-Path $scriptRoot "server.exe"
+$buildDir = Join-Path ([System.IO.Path]::GetTempPath()) ("distributed-rate-limiter-" + [System.Guid]::NewGuid().ToString("N"))
+$null = New-Item -ItemType Directory -Path $buildDir -Force
+$serverPath = Join-Path $buildDir "server.exe"
 $ports = @(8001, 8002, 8003)
 $processes = @()
 
@@ -154,5 +156,9 @@ finally {
         if (-not $proc.HasExited) {
             Stop-Process -Id $proc.Id -Force
         }
+    }
+
+    if (Test-Path $buildDir) {
+        Remove-Item -Path $buildDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

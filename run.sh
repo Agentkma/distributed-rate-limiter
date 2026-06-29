@@ -9,7 +9,8 @@ REDIS_ADDR="localhost:6379"
 REDIS_HOST="${REDIS_ADDR%:*}"
 REDIS_PORT="${REDIS_ADDR##*:}"
 
-SERVER_BIN="./server"
+BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/distributed-rate-limiter.XXXXXX")"
+SERVER_BIN="$BUILD_DIR/server"
 PORTS=(8001 8002 8003)
 PIDS=()
 
@@ -55,6 +56,10 @@ cleanup() {
       try_command kill "$pid" || true
     fi
   done
+
+  if [[ -d "$BUILD_DIR" ]]; then
+    try_command rm -rf "$BUILD_DIR" || true
+  fi
 }
 
 trap cleanup EXIT INT TERM
